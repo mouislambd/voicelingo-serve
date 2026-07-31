@@ -18,6 +18,12 @@ app.use(
 );
 
 // Better Auth
+app.use("/api/auth", (req, res, next) => {
+  console.log("Auth Request:", req.method, req.url);
+  console.log("Cookies:", req.headers.cookie);
+  next();
+});
+
 app.all("/api/auth/*splat", toNodeHandler(auth));
 
 // JSON Body Parser

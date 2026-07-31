@@ -16,13 +16,14 @@ export const auth = betterAuth({
   plugins: [bearer()],
   secret: process.env.BETTER_AUTH_SECRET!,
   baseURL: process.env.BETTER_AUTH_URL,
-  trustedOrigins: [process.env.CLIENT_URL!],
+  trustedOrigins: [process.env.CLIENT_URL!, process.env.BETTER_AUTH_URL!],
   advanced: {
     defaultCookieAttributes: {
       sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
       secure: process.env.NODE_ENV === "production",
       partitioned: process.env.NODE_ENV === "production",
     },
+    cookiePrefix: "voicelingo",
   },
   emailAndPassword: {
     enabled: true,
