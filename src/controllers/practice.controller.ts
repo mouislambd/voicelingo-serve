@@ -1,0 +1,188 @@
+import { Request, Response } from "express";
+import { PracticeSession } from "../models/practiceSession.model";
+import { UserProgress } from "../models/userProgress.model";
+import { Topic } from "../models/topic.model";
+import { groq, GROQ_MODEL } from "../lib/groq";
+
+export const startSession = async (req: Request, res: Response) => {
+  try {
+    const { topicId, topic, level } = req.body;
+    let finalTopic = topic;
+    let finalLevel = level;
+
+    if (topicId) {
+      const t = await Topic.findById(topicId);
+      if (t) {
+        finalTopic = t.title;
+        finalLevel = t.level;
+      }
+    }
+
+    const session = await PracticeSession.create({
+      userId: req.user.id,
+      topic: finalTopic,
+      level: finalLevel,
+      transcript: [],
+      mistakes: [],
+    });
+    res.status(201).json({ sessionId: session._id, message: "Session started" });
+  } catch (error) {
+    console.error("startSession error:", error);
+    res.status(500).json({ message: "Failed to start session" });
+  }
+};
+
+export const sendMessage = async (req: Request, res: Response) => {
+  try {
+    const { sessionId, message } = req.body;
+    const session = await PracticeSession.findOne({ _id: sessionId, userId: req.user.id });
+    if (!session) return res.status(404).json({ message: "Session not found" });
+
+    session.transcript.push({ role: "user", text: message, timestamp: new Date() });
+
+    const systemPrompt = `You are a friendly, encouraging conversation partner helping a student practice their ${session.topic} topic at a ${session.level} level. 
+Respond naturally as a human would.
+ALSO, analyze the student's last message for grammar/vocabulary issues.
+Return response ONLY as valid JSON: { "reply": "string", "feedback": { "hasMistake": boolean, "mistakeNote": "string|null" } }`;
+
+    const completion = await groq.chat.completions.create({
+      messages: [
+        { role: "system", content: systemPrompt },
+        ...session.transcript.map((t): { role: "user" | "assistant", content: string } => ({ 
+          role: t.role === "ai" ? "assistant" : "user", 
+          content: t.text 
+        })),
+      ],
+      model: GROQ_MODEL,
+      response_format: { type: "json_object" },
+    });
+
+    const aiResponse = JSON.parse(completion.choices[0].message.content!);
+    session.transcript.push({ role: "ai", text: aiResponse.reply, timestamp: new Date() });
+    
+    if (aiResponse.feedback.hasMistake && aiResponse.feedback.mistakeNote) {
+      session.mistakes.push(aiResponse.feedback.mistakeNote);
+    }
+
+    await session.save();
+    res.json({ 
+      reply: aiResponse.reply, 
+      feedback: aiResponse.feedback,
+      shouldEndSession: session.transcript.length >= 30
+    });
+  } catch (error) {
+    console.error("sendMessage error:", error);
+    res.status(500).json({ message: "Failed to process message" });
+  }
+};
+
+export const endSession = async (req: Request, res: Response) => {
+  try {
+    const { sessionId } = req.body;
+    const session = await PracticeSession.findOne({ _id: sessionId, userId: req.user.id });
+    if (!session) return res.status(404).json({ message: "Session not found" });
+
+    const completion = await groq.chat.completions.create({
+      messages: [
+        { role: "system", content: "Analyze this practice session and return JSON: { 'summary': '2-3 sentences', 'score': number(0-10), 'weakAreaTags': ['string', 'string'] }. weakAreaTags should be 1-3 word grammar/vocab category tags." },
+        { role: "user", content: JSON.stringify({ transcript: session.transcript, mistakes: session.mistakes }) }
+      ],
+      model: GROQ_MODEL,
+      response_format: { type: "json_object" },
+    });
+
+    const result = JSON.parse(completion.choices[0].message.content!);
+    session.summary = result.summary;
+    session.score = result.score;
+    await session.save();
+
+    let progress = await UserProgress.findOne({ userId: req.user.id });
+    if (!progress) {
+      progress = new UserProgress({ userId: req.user.id });
+    }
+
+    progress.totalSessions += 1;
+    progress.averageScore = (progress.averageScore * (progress.totalSessions - 1) + result.score) / progress.totalSessions;
+    progress.lastPracticedAt = new Date();
+    
+    result.weakAreaTags.forEach((tag: string) => { 
+      if (!progress!.weakAreas.includes(tag)) {
+        progress!.weakAreas.push(tag);
+      }
+    });
+
+    if (progress!.weakAreas.length > 20) {
+      progress!.weakAreas = progress!.weakAreas.slice(-20);
+    }
+    
+    if (progress!.averageScore > 8 && progress!.currentLevel === "beginner") progress!.currentLevel = "intermediate";
+    else if (progress!.averageScore > 9 && progress!.currentLevel === "intermediate") progress!.currentLevel = "advanced";
+
+    await progress.save();
+    res.json({ summary: result.summary, score: result.score, weakAreaTags: result.weakAreaTags, message: "Session ended" });
+  } catch (error) {
+    console.error("endSession error:", error);
+    res.status(500).json({ message: "Failed to end session" });
+  }
+};
+
+export const getUserProgress = async (req: Request, res: Response) => {
+  try {
+    const sessions = await PracticeSession.find({ userId: req.user.id, score: { $exists: true } });
+    
+    const totalSessions = sessions.length;
+    const totalScore = sessions.reduce((sum, s) => sum + (s.score || 0), 0);
+    const averageScore = totalSessions > 0 ? (totalScore / totalSessions) : 0;
+    
+    // Aggregate weak areas from all sessions if needed, or keep using UserProgress
+    const progress = await UserProgress.findOne({ userId: req.user.id });
+
+    res.json({ 
+      userId: req.user.id, 
+      totalSessions, 
+      averageScore, 
+      weakAreas: progress ? progress.weakAreas : [],
+      currentLevel: progress ? progress.currentLevel : "beginner"
+    });
+  } catch (error) {
+    console.error("getUserProgress error:", error);
+    res.status(500).json({ message: "Failed to fetch progress" });
+  }
+};
+
+export const getSessionHistory = async (req: Request, res: Response) => {
+  try {
+    const sessions = await PracticeSession.find({ userId: req.user.id })
+      .select("topic level score summary createdAt")
+      .sort({ createdAt: -1 })
+      .limit(20);
+    res.json(sessions);
+  } catch (error) {
+    console.error("getSessionHistory error:", error);
+    res.status(500).json({ message: "Failed to fetch history" });
+  }
+};
+
+export const getSession = async (req: Request, res: Response) => {
+  try {
+    const { sessionId } = req.params;
+    const session = await PracticeSession.findOne({ _id: sessionId, userId: req.user.id });
+    if (!session) return res.status(404).json({ message: "Session not found" });
+    res.json(session);
+  } catch (error) {
+    console.error("getSession error:", error);
+    res.status(500).json({ message: "Failed to fetch session" });
+  }
+};
+
+export const deleteSession = async (req: Request, res: Response) => {
+  try {
+    const { sessionId } = req.params;
+    const session = await PracticeSession.findOneAndDelete({ _id: sessionId, userId: req.user.id });
+    if (!session) return res.status(404).json({ message: "Session not found" });
+    res.json({ message: "Session deleted successfully" });
+  } catch (error) {
+    console.error("deleteSession error:", error);
+    res.status(500).json({ message: "Failed to delete session" });
+  }
+};
