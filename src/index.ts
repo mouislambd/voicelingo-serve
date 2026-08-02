@@ -6,6 +6,7 @@ import { toNodeHandler } from "better-auth/node";
 import connectDB from "./config/db";
 import practiceRoutes from "./routes/practice.routes";
 import topicRoutes from "./routes/topic.routes";
+import demoRoutes from "./routes/demo.routes";
 
 const app = express();
 
@@ -45,6 +46,9 @@ app.use("/api/practice", practiceRoutes);
 
 // Topic Routes
 app.use("/api/topics", topicRoutes);
+
+// Demo Routes
+app.use("/api/demo", demoRoutes);
 
 // Health Check
 app.get("/", (req, res) => {
