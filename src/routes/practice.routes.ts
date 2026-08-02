@@ -11,5 +11,6 @@ router.get("/progress", requireAuth, practiceController.getUserProgress);
 router.get("/history", requireAuth, practiceController.getSessionHistory);
 router.get("/session/:sessionId", requireAuth, practiceController.getSession);
 router.delete("/session/:sessionId", requireAuth, practiceController.deleteSession);
+router.get("/recommendation", requireAuth, practiceController.getRecommendation);
 
 export default router;

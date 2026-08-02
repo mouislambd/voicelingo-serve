@@ -6,9 +6,10 @@ import { groq, GROQ_MODEL } from "../lib/groq";
 
 export const startSession = async (req: Request, res: Response) => {
   try {
-    const { topicId, topic, level } = req.body;
+    const { topicId, topic, level, focusArea } = req.body;
     let finalTopic = topic;
     let finalLevel = level;
+    let finalFocusArea = focusArea;
 
     if (topicId) {
       const t = await Topic.findById(topicId);
@@ -24,6 +25,7 @@ export const startSession = async (req: Request, res: Response) => {
       level: finalLevel,
       transcript: [],
       mistakes: [],
+      focusArea: finalFocusArea,
     });
     res.status(201).json({ sessionId: session._id, message: "Session started" });
   } catch (error) {
@@ -40,9 +42,13 @@ export const sendMessage = async (req: Request, res: Response) => {
 
     session.transcript.push({ role: "user", text: message, timestamp: new Date() });
 
+    const focusAreaPrompt = session.focusArea 
+        ? `\nALSO, during this conversation, pay special attention to the student's use of ${session.focusArea} and gently correct/guide them if they make related mistakes.`
+        : "";
+
     const systemPrompt = `You are a friendly, encouraging conversation partner helping a student practice their ${session.topic} topic at a ${session.level} level. 
 Respond naturally as a human would.
-ALSO, analyze the student's last message for grammar/vocabulary issues.
+ALSO, analyze the student's last message for grammar/vocabulary issues.${focusAreaPrompt}
 Return response ONLY as valid JSON: { "reply": "string", "feedback": { "hasMistake": boolean, "mistakeNote": "string|null" } }`;
 
     const completion = await groq.chat.completions.create({
@@ -175,14 +181,38 @@ export const getSession = async (req: Request, res: Response) => {
   }
 };
 
-export const deleteSession = async (req: Request, res: Response) => {
-  try {
-    const { sessionId } = req.params;
-    const session = await PracticeSession.findOneAndDelete({ _id: sessionId, userId: req.user.id });
-    if (!session) return res.status(404).json({ message: "Session not found" });
-    res.json({ message: "Session deleted successfully" });
-  } catch (error) {
-    console.error("deleteSession error:", error);
-    res.status(500).json({ message: "Failed to delete session" });
-  }
-};
+export const getRecommendation = async (req: Request, res: Response) => {
+    try {
+      const userId = req.user.id;
+      const progress = await UserProgress.findOne({ userId });
+      const sessions = await PracticeSession.find({ userId }).sort({ createdAt: -1 }).limit(5);
+  
+      const weakAreaTags = progress ? progress.weakAreas : [];
+      const recentScores = sessions.map(s => s.score || 0);
+  
+      const systemPrompt = `You are an AI English learning advisor.
+  Given these student details: Weak areas: [${weakAreaTags.join(", ")}], Recent scores: [${recentScores.join(", ")}].
+  Recommend ONE specific topic to practice next. Explain why (1-2 sentences). Give ONE specific focus area (e.g., 'subject-verb agreement').
+  Return response ONLY as valid JSON: { "recommendedTopicCategory": "string", "reason": "string", "focusArea": "string" }`;
+  
+      const completion = await groq.chat.completions.create({
+        messages: [{ role: "system", content: systemPrompt }],
+        model: GROQ_MODEL,
+        response_format: { type: "json_object" },
+      });
+  
+      const rec = JSON.parse(completion.choices[0].message.content!);
+      
+      // Find a matching topic
+      const topic = await Topic.findOne({ category: rec.recommendedTopicCategory }) || await Topic.findOne();
+  
+      res.json({
+        topic: topic ? { id: topic._id, title: topic.title, level: topic.level } : { title: "General Conversation", level: "intermediate" },
+        reason: rec.reason,
+        focusArea: rec.focusArea
+      });
+    } catch (error) {
+      console.error("getRecommendation error:", error);
+      res.status(500).json({ message: "Failed to get recommendation" });
+    }
+  };

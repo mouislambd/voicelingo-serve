@@ -14,6 +14,7 @@ export interface IPracticeSession extends Document {
   summary: string;
   score: number;
   mistakes: string[];
+  focusArea?: string;
   createdAt: Date;
 }
 
@@ -36,6 +37,7 @@ const practiceSessionSchema = new Schema<IPracticeSession>(
     summary: { type: String },
     score: { type: Number, min: 0, max: 10 },
     mistakes: [{ type: String }],
+    focusArea: { type: String },
   },
   { timestamps: true }
 );
