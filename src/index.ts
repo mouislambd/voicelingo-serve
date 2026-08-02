@@ -19,8 +19,19 @@ app.use(
 
 // Better Auth
 app.use("/api/auth", (req, res, next) => {
-  console.log("Auth Request:", req.method, req.url);
+  console.log("--- Auth Request ---");
+  console.log("Method:", req.method, "URL:", req.url);
+  console.log("Headers:", JSON.stringify(req.headers, null, 2));
   console.log("Cookies:", req.headers.cookie);
+
+  // Capture Set-Cookie headers
+  const originalSend = res.send;
+  res.send = function (body) {
+    const setCookie = res.getHeader("Set-Cookie");
+    console.log("--- Auth Response ---");
+    console.log("Set-Cookie:", setCookie);
+    return originalSend.apply(this, arguments as any);
+  };
   next();
 });
 
