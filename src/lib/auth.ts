@@ -15,7 +15,7 @@ export const auth = betterAuth({
   database: mongodbAdapter(db),
   plugins: [bearer()],
   secret: process.env.BETTER_AUTH_SECRET!,
-  baseURL: process.env.BETTER_AUTH_URL,
+  baseURL: process.env.CLIENT_URL,
   trustedOrigins: [process.env.CLIENT_URL!],
   advanced: {
     defaultCookieAttributes: {
