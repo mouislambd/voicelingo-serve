@@ -5,9 +5,6 @@ import { Topic } from "../models/topic.model";
 import { groq, GROQ_MODEL } from "../lib/groq";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
-const visionModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
 // Helper to convert base64 to Generative AI Part
 const fileToGenerativePart = (base64Data: string, mimeType: string) => {
   return {
@@ -19,8 +16,15 @@ const fileToGenerativePart = (base64Data: string, mimeType: string) => {
 };
 
 export const customStartImage = async (req: Request, res: Response) => {
-  console.log("Gemini key exists:", !!process.env.GEMINI_API_KEY);
+  if (!process.env.GEMINI_API_KEY) {
+      console.error("GEMINI_API_KEY is not defined in environment variables");
+      return res.status(500).json({ message: "Configuration error" });
+  }
+
   try {
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const visionModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
     const { imageBase64, context } = req.body;
     if (!imageBase64) return res.status(400).json({ message: "Image is required" });
 
