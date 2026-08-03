@@ -19,6 +19,7 @@ const fileToGenerativePart = (base64Data: string, mimeType: string) => {
 };
 
 export const customStartImage = async (req: Request, res: Response) => {
+  console.log("Gemini key exists:", !!process.env.GEMINI_API_KEY);
   try {
     const { imageBase64, context } = req.body;
     if (!imageBase64) return res.status(400).json({ message: "Image is required" });
@@ -70,9 +71,14 @@ export const customStartImage = async (req: Request, res: Response) => {
     await session.save();
 
     res.status(201).json({ sessionId: session._id, message: "Session started" });
-  } catch (error) {
-    console.error("customStartImage error:", error);
-    res.status(500).json({ message: "Failed to start custom session from image" });
+  } catch (error: any) {
+    console.error("customStartImage error details:", {
+        message: error.message,
+        stack: error.stack,
+        status: error.status,
+        errorDetails: error.errorDetails
+    });
+    res.status(500).json({ message: "Failed to start custom session from image", error: error.message });
   }
 };
 
