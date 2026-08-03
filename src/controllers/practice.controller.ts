@@ -181,6 +181,20 @@ export const getSession = async (req: Request, res: Response) => {
   }
 };
 
+export const deleteSession = async (req: Request, res: Response) => {
+  try {
+    const { sessionId } = req.params;
+    const result = await PracticeSession.deleteOne({ _id: sessionId, userId: req.user.id });
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ message: "Session not found or unauthorized" });
+    }
+    res.json({ message: "Session deleted" });
+  } catch (error) {
+    console.error("deleteSession error:", error);
+    res.status(500).json({ message: "Failed to delete session" });
+  }
+};
+
 export const getRecommendation = async (req: Request, res: Response) => {
     try {
       const userId = req.user.id;
