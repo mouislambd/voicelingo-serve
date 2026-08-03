@@ -39,7 +39,7 @@ app.use("/api/auth", (req, res, next) => {
 app.all("/api/auth/*splat", toNodeHandler(auth));
 
 // JSON Body Parser
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
 
 // Practice Routes
 app.use("/api/practice", practiceRoutes);

@@ -3,6 +3,78 @@ import { PracticeSession } from "../models/practiceSession.model";
 import { UserProgress } from "../models/userProgress.model";
 import { Topic } from "../models/topic.model";
 import { groq, GROQ_MODEL } from "../lib/groq";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+const visionModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+// Helper to convert base64 to Generative AI Part
+const fileToGenerativePart = (base64Data: string, mimeType: string) => {
+  return {
+    inlineData: {
+      data: base64Data.split(",")[1] || base64Data,
+      mimeType,
+    },
+  };
+};
+
+export const customStartImage = async (req: Request, res: Response) => {
+  try {
+    const { imageBase64, context } = req.body;
+    if (!imageBase64) return res.status(400).json({ message: "Image is required" });
+
+    // Validate size (approximate for base64 string length)
+    // 10MB limit * 1.33 = ~13.3 million chars
+    if (imageBase64.length > 14000000) {
+      return res.status(400).json({ message: "Image too large" });
+    }
+
+    // Determine mime type (assuming png/jpg/webp)
+    const mimeMatch = imageBase64.match(/^data:(image\/\w+);base64,/);
+    const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
+
+    const prompt = `Look at this image and suggest ONE specific English conversation practice topic based on what you see. 
+    ${context ? `Additional context: ${context}` : ""}
+    Respond in JSON format: { "topicTitle": "string", "topicDescription": "string" }`;
+
+    const result = await visionModel.generateContent([
+      prompt,
+      fileToGenerativePart(imageBase64, mimeType),
+    ]);
+    
+    const responseText = result.response.text();
+    const topicData = JSON.parse(responseText.replace(/```json|```/g, ""));
+
+    // Create session
+    const session = await PracticeSession.create({
+      userId: req.user.id,
+      topic: topicData.topicTitle,
+      level: "intermediate", // Default
+      transcript: [],
+      mistakes: [],
+      focusArea: topicData.topicDescription,
+    });
+
+    // Generate opening message using existing Groq logic
+    const systemPrompt = `You are a friendly, encouraging conversation partner.
+    The student is practicing: ${topicData.topicTitle}.
+    Start the conversation by welcoming the student and asking a question related to this topic based on: ${topicData.topicDescription}.`;
+
+    const completion = await groq.chat.completions.create({
+      messages: [{ role: "system", content: systemPrompt }],
+      model: GROQ_MODEL,
+    });
+
+    const aiMessage = completion.choices[0].message.content!;
+    session.transcript.push({ role: "ai", text: aiMessage, timestamp: new Date() });
+    await session.save();
+
+    res.status(201).json({ sessionId: session._id, message: "Session started" });
+  } catch (error) {
+    console.error("customStartImage error:", error);
+    res.status(500).json({ message: "Failed to start custom session from image" });
+  }
+};
 
 export const startSession = async (req: Request, res: Response) => {
   try {

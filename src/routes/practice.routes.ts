@@ -5,6 +5,7 @@ import * as practiceController from "../controllers/practice.controller";
 const router = Router();
 
 router.post("/start", requireAuth, practiceController.startSession);
+router.post("/custom-start-image", requireAuth, practiceController.customStartImage);
 router.post("/message", requireAuth, practiceController.sendMessage);
 router.post("/end", requireAuth, practiceController.endSession);
 router.get("/progress", requireAuth, practiceController.getUserProgress);
