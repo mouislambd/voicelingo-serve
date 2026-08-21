@@ -146,10 +146,12 @@ Return response ONLY as valid JSON: { "reply": "string", "feedback": { "hasMista
       response_format: { type: "json_object" },
     });
 
-    const aiResponse = JSON.parse(completion.choices[0].message.content!);
+    const aiResponseRaw = completion.choices[0].message.content!;
+    const cleanedResponse = aiResponseRaw.replace(/```json|```/g, "").trim();
+    const aiResponse = JSON.parse(cleanedResponse);
     session.transcript.push({ role: "ai", text: aiResponse.reply, timestamp: new Date() });
     
-    if (aiResponse.feedback.hasMistake && aiResponse.feedback.mistakeNote) {
+    if (aiResponse.feedback && aiResponse.feedback.hasMistake && aiResponse.feedback.mistakeNote) {
       session.mistakes.push(aiResponse.feedback.mistakeNote);
     }
 
@@ -159,9 +161,12 @@ Return response ONLY as valid JSON: { "reply": "string", "feedback": { "hasMista
       feedback: aiResponse.feedback,
       shouldEndSession: session.transcript.length >= 30
     });
-  } catch (error) {
-    console.error("sendMessage error:", error);
-    res.status(500).json({ message: "Failed to process message" });
+  } catch (error: any) {
+    console.error("sendMessage error:", {
+      message: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({ message: "Failed to process message", details: error.message });
   }
 };
 
