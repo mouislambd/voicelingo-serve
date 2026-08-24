@@ -81,9 +81,11 @@ export const customStartImage = async (req: Request, res: Response) => {
         message: error.message,
         stack: error.stack,
         status: error.status,
-        errorDetails: error.errorDetails
+        errorDetails: error.errorDetails,
+        response: error.response?.data
     });
-    res.status(500).json({ message: "Failed to start custom session from image", error: error.message });
+    const statusCode = error.status || 500;
+    res.status(statusCode).json({ message: "Failed to start custom session", error: error.message, details: error.response?.data });
   }
 };
 
@@ -165,8 +167,17 @@ Return response ONLY as valid JSON: { "reply": "string", "feedback": { "hasMista
     console.error("sendMessage error:", {
       message: error.message,
       stack: error.stack,
+      response: error.response?.data
     });
-    res.status(500).json({ message: "Failed to process message", details: error.message });
+    
+    const statusCode = error.status || 500;
+    const errorMessage = error.message || "Failed to process message";
+    
+    res.status(statusCode).json({ 
+        message: "Failed to process message", 
+        error: errorMessage,
+        details: error.response?.data || "No additional details" 
+    });
   }
 };
 
@@ -214,9 +225,14 @@ export const endSession = async (req: Request, res: Response) => {
 
     await progress.save();
     res.json({ summary: result.summary, score: result.score, weakAreaTags: result.weakAreaTags, message: "Session ended" });
-  } catch (error) {
-    console.error("endSession error:", error);
-    res.status(500).json({ message: "Failed to end session" });
+  } catch (error: any) {
+    console.error("endSession error:", {
+        message: error.message,
+        stack: error.stack,
+        response: error.response?.data
+    });
+    const statusCode = error.status || 500;
+    res.status(statusCode).json({ message: "Failed to end session", error: error.message, details: error.response?.data });
   }
 };
 
@@ -313,8 +329,13 @@ export const getRecommendation = async (req: Request, res: Response) => {
         reason: rec.reason,
         focusArea: rec.focusArea
       });
-    } catch (error) {
-      console.error("getRecommendation error:", error);
-      res.status(500).json({ message: "Failed to get recommendation" });
+    } catch (error: any) {
+      console.error("getRecommendation error:", {
+        message: error.message,
+        stack: error.stack,
+        response: error.response?.data
+      });
+      const statusCode = error.status || 500;
+      res.status(statusCode).json({ message: "Failed to get recommendation", error: error.message, details: error.response?.data });
     }
   };
