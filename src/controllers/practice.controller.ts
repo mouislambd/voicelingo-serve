@@ -1,8 +1,11 @@
 import { Request, Response } from "express";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { PracticeSession } from "../models/practiceSession.model";
 import { UserProgress } from "../models/userProgress.model";
 import { Topic } from "../models/topic.model";
-import { groq, GROQ_MODEL } from "../lib/groq";
+import { callGroqWithFallback } from "../lib/groqFallback";
+
+const genAI = process.env.GEMINI_API_KEY ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY) : null;
 
 export const customStartImage = async (req: Request, res: Response) => {
   if (!process.env.GEMINI_API_KEY) {
@@ -29,26 +32,22 @@ export const customStartImage = async (req: Request, res: Response) => {
     ${context ? `Additional context: ${context}` : ""}
     Respond in JSON format: { "topicTitle": "string", "topicDescription": "string" }`;
 
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            contents: [{
-                parts: [
-                    { text: prompt },
-                    { inline_data: { mime_type: mimeType, data: base64Data } }
-                ]
-            }]
-        })
-    });
-
-    if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(`Gemini API error: ${JSON.stringify(errorData)}`);
+    if (!genAI) {
+        throw new Error("Gemini API key is not configured");
     }
 
-    const result = await response.json();
-    const responseText = result.candidates[0].content.parts[0].text;
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const result = await model.generateContent([
+        prompt,
+        {
+            inlineData: {
+                data: base64Data,
+                mimeType: mimeType,
+            },
+        },
+    ]);
+
+    const responseText = result.response.text();
     const topicData = JSON.parse(responseText.replace(/```json|```/g, ""));
 
     // Create session
@@ -66,9 +65,8 @@ export const customStartImage = async (req: Request, res: Response) => {
     The student is practicing: ${topicData.topicTitle}.
     Start the conversation by welcoming the student and asking a question related to this topic based on: ${topicData.topicDescription}.`;
 
-    const completion = await groq.chat.completions.create({
+    const completion = await callGroqWithFallback({
       messages: [{ role: "system", content: systemPrompt }],
-      model: GROQ_MODEL,
     });
 
     const aiMessage = completion.choices[0].message.content!;
@@ -136,7 +134,7 @@ Respond naturally as a human would.
 ALSO, analyze the student's last message for grammar/vocabulary issues.${focusAreaPrompt}
 Return response ONLY as valid JSON: { "reply": "string", "feedback": { "hasMistake": boolean, "mistakeNote": "string|null" } }`;
 
-    const completion = await groq.chat.completions.create({
+    const completion = await callGroqWithFallback({
       messages: [
         { role: "system", content: systemPrompt },
         ...session.transcript.map((t): { role: "user" | "assistant", content: string } => ({ 
@@ -144,7 +142,6 @@ Return response ONLY as valid JSON: { "reply": "string", "feedback": { "hasMista
           content: t.text 
         })),
       ],
-      model: GROQ_MODEL,
       response_format: { type: "json_object" },
     });
 
@@ -187,12 +184,11 @@ export const endSession = async (req: Request, res: Response) => {
     const session = await PracticeSession.findOne({ _id: sessionId, userId: req.user.id });
     if (!session) return res.status(404).json({ message: "Session not found" });
 
-    const completion = await groq.chat.completions.create({
+    const completion = await callGroqWithFallback({
       messages: [
         { role: "system", content: "Analyze this practice session and return JSON: { 'summary': '2-3 sentences', 'score': number(0-10), 'weakAreaTags': ['string', 'string'] }. weakAreaTags should be 1-3 word grammar/vocab category tags." },
         { role: "user", content: JSON.stringify({ transcript: session.transcript, mistakes: session.mistakes }) }
       ],
-      model: GROQ_MODEL,
       response_format: { type: "json_object" },
     });
 
@@ -313,9 +309,8 @@ export const getRecommendation = async (req: Request, res: Response) => {
   Recommend ONE specific topic to practice next. Explain why (1-2 sentences). Give ONE specific focus area (e.g., 'subject-verb agreement').
   Return response ONLY as valid JSON: { "recommendedTopicCategory": "string", "reason": "string", "focusArea": "string" }`;
   
-      const completion = await groq.chat.completions.create({
+      const completion = await callGroqWithFallback({
         messages: [{ role: "system", content: systemPrompt }],
-        model: GROQ_MODEL,
         response_format: { type: "json_object" },
       });
   
