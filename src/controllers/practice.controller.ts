@@ -36,6 +36,7 @@ export const customStartImage = async (req: Request, res: Response) => {
         throw new Error("Gemini API key is not configured");
     }
 
+    console.log("Key starts with:", process.env.GEMINI_API_KEY?.substring(0,5));
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     const result = await model.generateContent([
         prompt,
