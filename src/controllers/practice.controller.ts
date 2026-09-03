@@ -185,14 +185,19 @@ export const endSession = async (req: Request, res: Response) => {
     const session = await PracticeSession.findOne({ _id: sessionId, userId: req.user.id });
     if (!session) return res.status(404).json({ message: "Session not found" });
 
+    const prompt = "Analyze this practice session and return JSON: { 'summary': '2-3 sentences', 'score': number(0-10), 'weakAreaTags': ['string', 'string'] }. weakAreaTags should be 1-3 word grammar/vocab category tags.";
+    const userContent = JSON.stringify({ transcript: session.transcript, mistakes: session.mistakes });
+    console.log("FULL PROMPT SENT TO GROQ:", JSON.stringify({ system: prompt, user: userContent }, null, 2));
+
     const completion = await callGroqWithFallback({
       messages: [
-        { role: "system", content: "Analyze this practice session and return JSON: { 'summary': '2-3 sentences', 'score': number(0-10), 'weakAreaTags': ['string', 'string'] }. weakAreaTags should be 1-3 word grammar/vocab category tags." },
-        { role: "user", content: JSON.stringify({ transcript: session.transcript, mistakes: session.mistakes }) }
+        { role: "system", content: prompt },
+        { role: "user", content: userContent }
       ],
       response_format: { type: "json_object" },
     });
 
+    console.log("RAW GROQ RESPONSE:", completion.choices[0].message.content);
     const result = JSON.parse(completion.choices[0].message.content!);
     session.summary = result.summary;
     session.score = result.score;
