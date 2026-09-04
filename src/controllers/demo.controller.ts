@@ -17,7 +17,7 @@ export const getFeedback = async (req: Request, res: Response) => {
 Analyze the following sentence for grammar and fluency. 
 Return response ONLY as valid JSON: { "feedback": "string", "hasMistake": boolean, "correctedText": "string|null" }`;
 
-    const models = (process.env.GROQ_MODEL || "openai/gpt-oss-120b,openai/gpt-oss-20b,llama-3.1-8b-instant").split(",");
+    const models = (process.env.GROQ_MODEL || "openai/gpt-oss-120b,openai/gpt-oss-20b,qwen/qwen3.6-27b").split(",");
     
     let aiResponse;
     let success = false;

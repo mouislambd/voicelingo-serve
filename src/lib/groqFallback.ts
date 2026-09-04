@@ -3,8 +3,8 @@ import { groq } from "./groq";
 // Define the order of models to try
 const FALLBACK_MODELS = [
   "qwen/qwen3.6-27b",
-  "llama-3.3-70b-versatile",
-  "llama-3.1-8b-instant"
+  "openai/gpt-oss-120b",
+  "openai/gpt-oss-20b"
 ];
 
 // Timeout in milliseconds
