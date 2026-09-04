@@ -121,6 +121,7 @@ export const startSession = async (req: Request, res: Response) => {
 export const sendMessage = async (req: Request, res: Response) => {
   try {
     const { sessionId, message } = req.body;
+    console.log("Incoming message:", message);
     const session = await PracticeSession.findOne({ _id: sessionId, userId: req.user.id });
     if (!session) return res.status(404).json({ message: "Session not found" });
 
@@ -135,17 +136,21 @@ Respond naturally as a human would.
 ALSO, analyze the student's last message for grammar/vocabulary issues.${focusAreaPrompt}
 Return response ONLY as valid JSON: { "reply": "string", "feedback": { "hasMistake": boolean, "mistakeNote": "string|null" } }`;
 
-    const completion = await callGroqWithFallback({
-      messages: [
+    const messages = [
         { role: "system", content: systemPrompt },
         ...session.transcript.map((t): { role: "user" | "assistant", content: string } => ({ 
           role: t.role === "ai" ? "assistant" : "user", 
           content: t.text 
         })),
-      ],
+    ];
+    console.log("FULL PROMPT SENT TO GROQ:", JSON.stringify(messages, null, 2));
+
+    const completion = await callGroqWithFallback({
+      messages: messages,
       response_format: { type: "json_object" },
     });
 
+    console.log("RAW GROQ RESPONSE:", completion.choices[0].message.content);
     const aiResponseRaw = completion.choices[0].message.content!;
     const cleanedResponse = aiResponseRaw.replace(/```json|```/g, "").trim();
     const aiResponse = JSON.parse(cleanedResponse);
